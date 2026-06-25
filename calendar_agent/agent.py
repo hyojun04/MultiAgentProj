@@ -165,7 +165,6 @@ class GoogleCalendarClient:
         if os.path.exists(_TOKEN_PATH):
             creds = Credentials.from_authorized_user_file(_TOKEN_PATH, SCOPES)
 
-            # 기존 token에 필요한 scope가 없으면 재인증
             if not creds.has_scopes(SCOPES):
                 logger.warning("[CALENDAR AGENT] 기존 token scope 부족. 재인증 필요")
                 creds = None
@@ -317,8 +316,6 @@ class GoogleCalendarClient:
 
         contains_score = 0.0
 
-        # 예: 사용자 입력 "AI 에이전트 시연 준비 회의 일정 찾아줘"
-        # 실제 제목 "AI 에이전트 시연 준비 회의"
         if summary_norm and summary_norm in query_norm:
             contains_score = 0.98
         elif query_norm in combined_norm:
@@ -477,11 +474,9 @@ class GoogleCalendarClient:
         top_event = events[0]
         top_score = top_event.get("_match_score", 0)
 
-        # 후보가 하나이고 유사도가 어느 정도 이상이면 자동 선택
         if len(events) == 1 and top_score >= 0.40:
             return top_event, None
 
-        # 후보가 여러 개여도 1등이 충분히 높고 2등과 차이가 크면 자동 선택
         if len(events) > 1:
             second_score = events[1].get("_match_score", 0)
 
@@ -498,6 +493,172 @@ class GoogleCalendarClient:
             "날짜나 시간을 더 구체적으로 말해 주세요.\n\n"
             f"{rendered}"
         )
+
+    def _find_conflicting_events(
+        self,
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> List[Dict[str, Any]]:
+        """
+        요청한 시간대와 겹치는 기존 일정을 찾는다.
+        겹침 조건: 기존 시작 < 새 종료 and 기존 종료 > 새 시작
+        """
+        self._ensure_initialized()
+
+        result = self.service.events().list(
+            calendarId="primary",
+            timeMin=start_dt.isoformat(),
+            timeMax=end_dt.isoformat(),
+            singleEvents=True,
+            orderBy="startTime",
+            maxResults=20,
+            timeZone=TIMEZONE,
+        ).execute()
+
+        events = result.get("items", [])
+        conflicts = []
+
+        for event in events:
+            event_start = self._event_start_dt(event)
+            event_end = self._event_end_dt(event)
+
+            if not event_start or not event_end:
+                continue
+
+            if event_start < end_dt and event_end > start_dt:
+                conflicts.append(event)
+
+        return conflicts
+
+    def _suggest_available_slots(
+        self,
+        date: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        limit: int = 3,
+    ) -> List[Tuple[datetime, datetime]]:
+        """
+        충돌이 발생했을 때 같은 날짜에서 가능한 대체 시간대를 추천한다.
+        요청한 시작 시간 이후부터 21:00까지 탐색한다.
+        """
+        duration = end_dt - start_dt
+        tz = self._tz()
+
+        day_start = datetime.combine(
+            start_dt.date(),
+            time(9, 0),
+            tzinfo=tz,
+        )
+        day_end = datetime.combine(
+            start_dt.date(),
+            time(21, 0),
+            tzinfo=tz,
+        )
+
+        cursor = max(start_dt, day_start)
+
+        events, _ = self._fetch_events(
+            date=date,
+            max_results=100,
+        )
+
+        busy_slots = []
+
+        for event in events:
+            busy_start = self._event_start_dt(event)
+            busy_end = self._event_end_dt(event)
+
+            if not busy_start or not busy_end:
+                continue
+
+            if busy_end <= day_start or busy_start >= day_end:
+                continue
+
+            busy_slots.append((
+                max(busy_start, day_start),
+                min(busy_end, day_end),
+            ))
+
+        busy_slots.sort(key=lambda slot: slot[0])
+
+        available_slots = []
+
+        for busy_start, busy_end in busy_slots:
+            if busy_end <= cursor:
+                continue
+
+            if busy_start > cursor:
+                gap = busy_start - cursor
+
+                if gap >= duration:
+                    available_slots.append((cursor, cursor + duration))
+
+                    if len(available_slots) >= limit:
+                        return available_slots
+
+            if busy_end > cursor:
+                cursor = busy_end
+
+        if cursor + duration <= day_end:
+            available_slots.append((cursor, cursor + duration))
+
+        return available_slots[:limit]
+
+    def _render_conflict_message(
+        self,
+        title: str,
+        date: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        conflicts: List[Dict[str, Any]],
+    ) -> str:
+        lines = [
+            "⚠️ 요청한 시간대에 이미 등록된 일정이 있어 새 일정을 등록하지 않았습니다.",
+            "",
+            "[요청한 일정]",
+            f"- 제목: {title}",
+            f"- 시간: {start_dt.strftime('%Y-%m-%d %H:%M')} ~ {end_dt.strftime('%H:%M')}",
+            "",
+            "[겹치는 기존 일정]",
+        ]
+
+        for i, event in enumerate(conflicts, 1):
+            summary = event.get("summary", "제목 없음")
+            event_id = event.get("id", "")
+
+            event_start = self._format_datetime(
+                event.get("start", {}).get("dateTime")
+                or event.get("start", {}).get("date")
+            )
+            event_end = self._format_datetime(
+                event.get("end", {}).get("dateTime")
+                or event.get("end", {}).get("date")
+            )
+
+            lines.append(f"{i}. {summary}")
+            lines.append(f"   - 시간: {event_start} ~ {event_end}")
+            lines.append(f"   - event_id: {event_id}")
+
+        suggested_slots = self._suggest_available_slots(
+            date=date,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            limit=3,
+        )
+
+        if suggested_slots:
+            lines.append("")
+            lines.append("[대체 가능한 시간]")
+            for i, (slot_start, slot_end) in enumerate(suggested_slots, 1):
+                lines.append(
+                    f"{i}. {slot_start.strftime('%Y-%m-%d %H:%M')} ~ "
+                    f"{slot_end.strftime('%H:%M')}"
+                )
+        else:
+            lines.append("")
+            lines.append("같은 날짜에서 바로 추천할 수 있는 대체 시간대를 찾지 못했습니다.")
+
+        return "\n".join(lines)
 
     def list_events(self, range_type: str = "today") -> str:
         events, range_title = self._fetch_events(range_type=range_type)
@@ -550,6 +711,20 @@ class GoogleCalendarClient:
         if end_dt <= start_dt:
             return "일정 종료 시간이 시작 시간보다 늦어야 합니다."
 
+        conflicts = self._find_conflicting_events(
+            start_dt=start_dt,
+            end_dt=end_dt,
+        )
+
+        if conflicts:
+            return self._render_conflict_message(
+                title=title,
+                date=date,
+                start_dt=start_dt,
+                end_dt=end_dt,
+                conflicts=conflicts,
+            )
+
         event_body = {
             "summary": title,
             "start": {
@@ -581,7 +756,7 @@ class GoogleCalendarClient:
 
         created_event = self.service.events().insert(
             calendarId="primary",
-            body=event_body
+            body=event_body,
         ).execute()
 
         link = created_event.get("htmlLink", "")
@@ -969,12 +1144,13 @@ class CalendarAgent:
     5. 일정 삭제
     6. 빈 시간 확인
     7. 일정 요약
+    8. 일정 등록 전 충돌 방지
     """
 
     def __init__(self):
         self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
         self.calendar_client = GoogleCalendarClient()
-    
+
     def parse_request(self, query: str) -> CalendarRequest:
         tz = ZoneInfo(TIMEZONE)
         now = datetime.now(tz)
@@ -1158,7 +1334,8 @@ action 선택:
             "4. 일정 수정\n"
             "5. 일정 삭제\n"
             "6. 빈 시간 확인\n"
-            "7. 오늘/이번 주 일정 요약"
+            "7. 오늘/이번 주 일정 요약\n"
+            "8. 일정 등록 전 충돌 방지"
         )
 
     async def stream(
