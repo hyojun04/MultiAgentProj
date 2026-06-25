@@ -1,0 +1,33 @@
+# Environment
+.env
+.env.*
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# LangGraph / Vector DB
+.langgraph_api/
+chroma_db/
+
+# Google OAuth / Drive credentials
+credentials.json
+token.json
+file_management_agent/credentials.json
+file_management_agent/token.json
+
+# Logs
+*.log
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
