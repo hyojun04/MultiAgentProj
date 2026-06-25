@@ -1,0 +1,39 @@
+services:
+  multi-agent-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multi-agent-app
+    env_file:
+      - .env
+    environment:
+      CHAT_API_HOST: 0.0.0.0
+      CHAT_API_PORT: 8000
+      ORCHESTRATOR_AGENT_URL: http://localhost:10010
+      RAG_AGENT_URL: http://localhost:10012
+      WEB_AGENT_URL: http://localhost:10011
+      FILE_AGENT_URL: http://localhost:10013
+      CALENDAR_AGENT_URL: http://localhost:10014
+      CALENDAR_AGENT_HOST: 0.0.0.0
+      CALENDAR_AGENT_PORT: 10014
+      CALENDAR_AGENT_PUBLIC_URL: http://localhost:10014
+    ports:
+      - "8000:8000"
+      - "10010:10010"
+      - "10011:10011"
+      - "10012:10012"
+      - "10013:10013"
+      - "10014:10014"
+    volumes:
+      - .:/app
+    command: >
+      sh -c "
+        cd /app/web_research_agent && python agent_server.py &
+        cd /app/internal_rag_agent && python agent_server.py &
+        cd /app/file_management_agent && python agent_server.py &
+        cd /app/calendar_agent && python agent_server.py &
+        cd /app/orchestrator_agent && python agent_server.py &
+        cd /app && python -m chat_api.main &
+        wait
+      "
+    restart: unless-stopped
