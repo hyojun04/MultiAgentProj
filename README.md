@@ -95,7 +95,18 @@ python agent_server.py
 
 서버가 `http://localhost:10013`에서 실행됩니다.
 
-### 4단계: Orchestrator Agent 서버 실행
+### 4단계: Calendar Agent 서버 실행
+
+새로운 터미널에서:
+
+```bash
+cd calendar_agent
+python agent_server.py
+```
+
+서버가 `http://localhost:10014`에서 실행됩니다.
+
+### 5단계: Orchestrator Agent 서버 실행
 
 새로운 터미널에서:
 
@@ -106,7 +117,7 @@ python agent_server.py
 
 서버가 `http://localhost:10010`에서 실행됩니다.
 
-### 5단계: 클라이언트로 에이전트와 통신
+### 6단계: 클라이언트로 에이전트와 통신
 
 새로운 터미널에서:
 
@@ -120,22 +131,29 @@ python test_client.py
 CHAP11_final-project/
 ├── README.md
 ├── requirements.txt
-├── test_client.py              # 테스트 클라이언트
-├── orchestrator_agent/         # Host Agent (포트: 10010)
+├── test_client.py                  # A2A 오케스트레이터 통합 테스트 클라이언트
+├── common/                         # 공통 유틸/공유 모듈
+├── orchestrator_agent/             # Host Agent (포트: 10010)
+│   ├── agent.py                    # 사용자 요청 분석, Plan 생성, Remote Agent 호출, 결과 통합
+│   ├── agent_executor.py           # A2A 요청 실행자
+│   └── agent_server.py             # Orchestrator Agent 서버 실행
+├── web_research_agent/             # Remote Agent - 웹 검색/최신 정보 조사 (포트: 10011)
 │   ├── agent.py
 │   ├── agent_executor.py
 │   └── agent_server.py
-├── web_research_agent/         # Remote Agent (포트: 10011)
+├── internal_rag_agent/             # Remote Agent - 내부 문서 검색/RAG/문서 인덱싱 (포트: 10012)
 │   ├── agent.py
 │   ├── agent_executor.py
-│   └── agent_server.py
-├── internal_rag_agent/         # Remote Agent (포트: 10012)
+│   ├── agent_server.py
+│   └── index.sql                   # Supabase pgvector 테이블/RPC 생성 SQL
+├── file_management_agent/          # Remote Agent - Google Drive 파일 관리 (포트: 10013)
 │   ├── agent.py
 │   ├── agent_executor.py
-│   └── agent_server.py
-└── file_management_agent/      # Remote Agent (포트: 10013)
-    ├── agent.py
-    ├── agent_executor.py
-    ├── agent_server.py
-    └── gdrive_client.py
+│   ├── agent_server.py
+│   └── gdrive_client.py
+└── calendar_agent/                 # Remote Agent - Google Calendar 일정 조회/등록 (포트: 10014)
+    ├── agent.py                    # list_events, create_event 처리
+    ├── agent_executor.py           # A2A 요청 실행자
+    ├── agent_server.py             # Calendar Agent 서버 실행
+    └── token.json                  # Google Calendar OAuth 토큰 (.gitignore 처리)
 ```

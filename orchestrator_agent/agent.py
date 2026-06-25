@@ -19,6 +19,7 @@ AGENT_URLS = {
     "internal_rag": os.getenv("RAG_AGENT_URL", "http://localhost:10012"),
     "web_research": os.getenv("WEB_AGENT_URL", "http://localhost:10011"),
     "file_management": os.getenv("FILE_AGENT_URL", "http://localhost:10013"),
+    "calendar_agent": os.getenv("CALENDAR_AGENT_URL", "http://localhost:10014"),
 }
 
 class OrchestratorAgent:
@@ -36,7 +37,7 @@ class OrchestratorAgent:
 당신은 사용자 요청을 분석하고 적절한 하위 에이전트 실행 계획을 생성하는 Orchestrator입니다.
 당신의 역할은 직접 작업을 수행하는 것이 아니라, 어떤 에이전트를 어떤 순서로 호출할지 결정하는 것입니다.
 
-사용 가능한 agent 이름은 반드시 아래 3개 중 하나만 사용합니다.
+사용 가능한 agent 이름은 반드시 아래 4개 중 하나만 사용합니다.
 절대 다른 agent 이름을 만들지 마세요.
 
 1. internal_rag
@@ -58,15 +59,20 @@ class OrchestratorAgent:
 - 파일 다운로드/삭제/수정
 - storage_ref 확인 요청 담당
 
+4. calendar_agent
+- Google Calendar 일정 조회
+- Google Calendar 일정 등록
+- "오늘 일정", "이번 주 일정", "캘린더", "일정 등록", "회의 잡아줘", "스케줄 알려줘" 요청 담당
+
 응답은 반드시 JSON object만 반환합니다.
 마크다운, 설명문, 코드블록은 절대 포함하지 마세요.
 
 응답 형식:
 {
-  "intent": "INTERNAL_SEARCH|WEB_SEARCH|FILE_OPERATION|HYBRID|DIRECT",
+  "intent": "INTERNAL_SEARCH|WEB_SEARCH|FILE_OPERATION|CALENDAR_OPERATION|HYBRID|DIRECT",
   "plan": [
     {
-      "agent": "internal_rag|web_research|file_management",
+      "agent": "internal_rag|web_research|file_management|calendar_agent",
       "query": "하위 에이전트에게 전달할 자연어 요청"
     }
   ],
@@ -192,12 +198,60 @@ F. 단순 대화
   "direct_answer": "안녕하세요. 웹 검색, Google Drive 파일 관리, 문서 인덱싱, 인덱싱된 문서 검색을 도와드릴 수 있습니다."
 }
 
+G. Google Calendar 일정 조회
+사용자가 오늘 일정, 이번 주 일정, 이번주 일정, 캘린더 조회, 스케줄 조회를 요청하면 calendar_agent를 호출합니다.
+
+예:
+사용자: 오늘 일정 알려줘
+응답:
+{
+  "intent": "CALENDAR_OPERATION",
+  "plan": [
+    {
+      "agent": "calendar_agent",
+      "query": "오늘 일정을 조회해줘."
+    }
+  ],
+  "direct_answer": ""
+}
+
+사용자: 이번주 일정 알려줘
+응답:
+{
+  "intent": "CALENDAR_OPERATION",
+  "plan": [
+    {
+      "agent": "calendar_agent",
+      "query": "이번 주 일정을 조회해줘."
+    }
+  ],
+  "direct_answer": ""
+}
+
+H. Google Calendar 일정 등록
+사용자가 회의, 일정, 스케줄을 등록하라고 하면 calendar_agent를 호출합니다.
+
+예:
+사용자: 내일 오후 2시에 AI 에이전트 프로젝트 회의 일정 등록해줘
+응답:
+{
+  "intent": "CALENDAR_OPERATION",
+  "plan": [
+    {
+      "agent": "calendar_agent",
+      "query": "내일 오후 2시에 AI 에이전트 프로젝트 회의 일정을 등록해줘."
+    }
+  ],
+  "direct_answer": ""
+}
+
 금지 사항:
 - agent 이름을 새로 만들지 마세요.
 - 사용자가 요청하지 않은 에이전트를 호출하지 마세요.
 - 파일 인덱싱 요청에서 file_management 단계를 생략하지 마세요.
 - 웹 검색 후 저장 요청에서 file_management 단계를 생략하지 마세요.
 - 인덱싱된 문서 검색 요청을 web_research로 보내지 마세요.
+- 캘린더/일정/스케줄 조회 또는 등록 요청을 DIRECT로 처리하지 마세요.
 """
 
     def __init__(self):
