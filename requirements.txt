@@ -18,6 +18,7 @@ cachetools==5.5.2
 certifi==2025.8.3
 cffi==1.17.1
 charset-normalizer==3.4.2
+fastapi==0.116.1
 chromadb==1.0.20
 click==8.2.1
 cloudpickle==3.1.1
