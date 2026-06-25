@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from chat_api.config import get_settings
@@ -31,6 +32,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Multi Agent Chat API", version="0.1.0", lifespan=lifespan)
+
+# CORS 설정 - 프론트엔드에서 API 호출 허용
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(chat_router)
 
 
