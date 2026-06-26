@@ -42,17 +42,19 @@ class ChatService:
     ) -> dict[str, Any]:
         self._require_conversation(conversation_id, user_id)
 
+        recent_messages = self.repository.list_recent_messages(conversation_id, limit=20)
         user_message = self.repository.create_message(conversation_id, "user", content)
 
-         # 장기메모리 검색 →  오케스트레이터로 보낼 content에만 컨텍스트 prepend
+        # 장기메모리는 현재 요청과 분리해서 전달해 과거/참고 정보가 실행 대상으로 섞이지 않게 한다.
         memory_context = self.memory_service.retrieve_context(user_id, content)
-        augmented_content = (
-            f"{memory_context}\n\n{content}" if memory_context else content
-        )
-
 
         try:
-            assistant_content = await self.agent_service.send_message(augmented_content, conversation_id)
+            assistant_content = await self.agent_service.send_message(
+                content,
+                conversation_id,
+                history=recent_messages,
+                memory_context=memory_context,
+            )
         except Exception as exc:
             raise api_error(502, "AGENT_CALL_FAILED", str(exc)) from exc
 

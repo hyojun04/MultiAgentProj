@@ -1,4 +1,5 @@
 import logging
+import json
 from typing import Any
 from uuid import uuid4
 
@@ -40,14 +41,26 @@ class AgentService:
             self.httpx_client = None
         self.agent_client = None
 
-    async def send_message(self, content: str, conversation_id: int) -> str:
+    async def send_message(
+        self,
+        content: str,
+        conversation_id: int,
+        history: list[dict[str, Any]] | None = None,
+        memory_context: str = "",
+    ) -> str:
         if not self.agent_client:
             await self.initialize()
 
+        payload = self._build_message_payload(
+            content=content,
+            conversation_id=conversation_id,
+            history=history,
+            memory_context=memory_context,
+        )
         message = Message(
             kind="message",
             role="user",
-            parts=[TextPart(kind="text", text=content)],
+            parts=[TextPart(kind="text", text=json.dumps(payload, ensure_ascii=False))],
             message_id=uuid4().hex,
         )
         request = SendMessageRequest(
@@ -61,6 +74,32 @@ class AgentService:
             raise RuntimeError("Agent returned an empty response")
 
         return response_text
+
+    @staticmethod
+    def _build_message_payload(
+        content: str,
+        conversation_id: int,
+        history: list[dict[str, Any]] | None = None,
+        memory_context: str = "",
+    ) -> dict[str, Any]:
+        conversation_history = []
+        for message in history or []:
+            message_content = message.get("content")
+            if not message_content:
+                continue
+            conversation_history.append(
+                {
+                    "role": str(message.get("role", "")),
+                    "content": str(message_content),
+                }
+            )
+
+        return {
+            "current_query": content,
+            "conversation_id": conversation_id,
+            "conversation_history": conversation_history,
+            "memory_context": memory_context or "",
+        }
 
     @staticmethod
     def _extract_response_text(response: Any) -> str | None:

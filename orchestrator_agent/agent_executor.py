@@ -4,7 +4,10 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TaskState, Part, TextPart
 from a2a.utils import new_agent_text_message, new_task
-from agent import OrchestratorAgent
+try:
+    from .agent import OrchestratorAgent
+except ImportError:
+    from agent import OrchestratorAgent
 
 logger = logging.getLogger(__name__)
 
