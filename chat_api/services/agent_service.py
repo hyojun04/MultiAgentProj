@@ -353,6 +353,7 @@ class AgentService:
             for artifact in result.artifacts:
                 for part in getattr(artifact, "parts", []) or []:
                     text = cls._extract_text_from_part(part)
+
                     if text:
                         return text
 
@@ -362,6 +363,7 @@ class AgentService:
 
             for part in getattr(artifact, "parts", []) or []:
                 text = cls._extract_text_from_part(part)
+
                 if text:
                     return text
 
@@ -372,6 +374,7 @@ class AgentService:
             if status_message:
                 for part in getattr(status_message, "parts", []) or []:
                     text = cls._extract_text_from_part(part)
+
                     if text:
                         return text
 
@@ -379,6 +382,7 @@ class AgentService:
         if hasattr(result, "message") and result.message:
             for part in getattr(result.message, "parts", []) or []:
                 text = cls._extract_text_from_part(part)
+
                 if text:
                     return text
 
@@ -386,6 +390,7 @@ class AgentService:
         if hasattr(result, "parts") and result.parts:
             for part in result.parts:
                 text = cls._extract_text_from_part(part)
+
                 if text:
                     return text
 
@@ -395,6 +400,7 @@ class AgentService:
                 if hasattr(msg, "role") and "agent" in str(msg.role):
                     for part in getattr(msg, "parts", []) or []:
                         text = cls._extract_text_from_part(part)
+
                         if text:
                             return text
 

@@ -284,6 +284,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
         """사용자 질문 분석 및 플랜 생성"""
         input_state = self._parse_input_state(state)
         intent_prompt = self._build_intent_prompt(input_state)
+
         response = await self.openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -305,20 +306,26 @@ assistant: 이번 주 일정은 다음과 같습니다:
                 parsed = json.loads(raw_input)
             except (TypeError, json.JSONDecodeError):
                 parsed = None
+
             data = parsed if isinstance(parsed, dict) else {"current_query": raw_input}
 
         current_query = str(data.get("current_query") or data.get("query") or "")
         history = data.get("conversation_history") or []
+
         if not isinstance(history, list):
             history = []
 
         normalized_history = []
+
         for message in history:
             if not isinstance(message, dict):
                 continue
+
             content = message.get("content")
+
             if not content:
                 continue
+
             normalized_history.append(
                 {
                     "role": str(message.get("role", "")),
@@ -337,18 +344,22 @@ assistant: 이번 주 일정은 다음과 같습니다:
     def _build_intent_prompt(state: Dict[str, Any]) -> str:
         sections = []
         history = state.get("conversation_history") or []
+
         if history:
             history_lines = []
+
             for message in history:
                 role = message.get("role", "unknown")
                 content = message.get("content", "")
                 history_lines.append(f"{role}: {content[:2000]}")
+
             sections.append(
                 "[이전 대화 - 참고용, 실행 금지]\n"
                 + "\n".join(history_lines)
             )
 
         memory_context = state.get("memory_context")
+
         if memory_context:
             sections.append(f"[사용자 장기기억 - 참고용]\n{memory_context[:4000]}")
 
@@ -356,7 +367,35 @@ assistant: 이번 주 일정은 다음과 같습니다:
             "[현재 사용자 요청 - 이것만 실행 대상]\n"
             f"{state.get('current_query', '')}"
         )
+
         return "\n\n".join(sections)
+
+    @staticmethod
+    def _build_file_management_query(agent_query: str, state: Dict[str, Any]) -> str:
+        history = state.get("conversation_history") or []
+
+        if not history:
+            return agent_query
+
+        history_lines = []
+
+        for message in history:
+            role = message.get("role", "unknown")
+            content = message.get("content", "")
+            history_lines.append(f"{role}: {content[:4000]}")
+
+        return (
+            f"{agent_query}\n\n"
+            "[현재 사용자 요청 - 실행 대상]\n"
+            f"{state.get('current_query', '')}\n\n"
+            "[이전 대화 - 참조 전용, 실행 금지]\n"
+            f"{chr(10).join(history_lines)}\n\n"
+            "[파일 작업 규칙]\n"
+            "- 실행해야 하는 명령은 [현재 사용자 요청]과 위 file_management 요청뿐입니다.\n"
+            "- [이전 대화]의 사용자 요청을 다시 실행하지 마세요.\n"
+            "- 사용자가 '조사한 내용', '위 내용', '1번 자료', '2번 자료'처럼 이전 대화를 가리키면 [이전 대화]에서 해당 assistant 답변을 찾아 참조하세요.\n"
+            "- 이전 assistant 답변을 파일로 저장하거나 업데이트할 때는 원문을 요약, 재작성, 번역, 보정하지 말고 그대로 사용하세요."
+        )
 
     async def call_remote_agent(self, agent_name: str, query: str) -> Dict[str, Any]:
         """Remote Agent 호출"""
@@ -442,6 +481,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
                                 if hasattr(part, "root") and hasattr(part.root, "text"):
                                     content = part.root.text
                                     break
+
                         if content:
                             break
 
@@ -459,6 +499,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
 
         except Exception as e:
             logger.error(f"[ORCHESTRATOR] [REMOTE] {agent_name} 호출 실패: {e}")
+
             return {
                 "success": False,
                 "content": f"에이전트 호출 실패: {str(e)}",
@@ -589,6 +630,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
             )
         except Exception as e:
             logger.error(f"[ORCHESTRATOR] Intent 분석 실패: {e}")
+
             yield {
                 "type": "done",
                 "stage": "error",
@@ -597,6 +639,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
                 "require_user_input": False,
                 "content": f"분석 중 오류: {str(e)}",
             }
+
             return
 
         intent = analysis.get("intent", "DIRECT")
@@ -638,6 +681,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
                 "content": direct_answer,
                 "artifacts": [],
             }
+
             return
 
         if not plan:
@@ -650,6 +694,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
                 "content": "처리할 작업이 없습니다.",
                 "artifacts": [],
             }
+
             return
 
         yield {
@@ -670,7 +715,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
 
         for i, step in enumerate(plan):
             agent_name = step.get("agent")
-            agent_query = step.get("query", query)
+            agent_query = step.get("query", current_query)
             display_name = AGENT_DISPLAY_NAMES.get(agent_name, agent_name)
 
             if previous_step_failed:
@@ -698,7 +743,9 @@ assistant: 이번 주 일정은 다음과 같습니다:
                     f"- {f['filename']} ({f['storage_ref']})"
                     for f in file_list_from_artifacts
                 ])
+
                 agent_query = f"{agent_query}\n\n사용 가능한 파일 목록:\n{files_text}"
+
                 logger.info(
                     f"[ORCHESTRATOR] RAG에 "
                     f"{len(file_list_from_artifacts)}개 파일 정보 전달"
@@ -714,6 +761,9 @@ assistant: 이번 주 일정은 다음과 같습니다:
                         f"[이전 에이전트 결과]:\n"
                         f"{previous_result_content[:2000]}"
                     )
+
+            if agent_name == "file_management":
+                agent_query = self._build_file_management_query(agent_query, state)
 
             yield {
                 "type": "status",
@@ -767,8 +817,10 @@ assistant: 이번 주 일정은 다음과 같습니다:
 
                     if artifact_name == "file_list" and isinstance(artifact_data, dict):
                         files = artifact_data.get("files", [])
+
                         if files:
                             file_list_from_artifacts.extend(files)
+
                             logger.info(
                                 f"[ORCHESTRATOR] DataPart에서 "
                                 f"{len(files)}개 파일 추출"
@@ -797,7 +849,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
         final_parts = []
 
         try:
-            async for delta in self.generate_final_response_stream(query, results):
+            async for delta in self.generate_final_response_stream(current_query, results):
                 final_parts.append(delta)
 
                 yield {
@@ -812,11 +864,11 @@ assistant: 이번 주 일정은 다음과 같습니다:
             final_response = "".join(final_parts).strip()
 
             if not final_response:
-                final_response = await self.generate_final_response(query, results)
+                final_response = await self.generate_final_response(current_query, results)
 
         except Exception as e:
             logger.error(f"[ORCHESTRATOR] 최종 응답 스트리밍 실패: {e}")
-            final_response = await self.generate_final_response(query, results)
+            final_response = await self.generate_final_response(current_query, results)
 
         yield {
             "type": "done",

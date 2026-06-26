@@ -102,6 +102,7 @@ class ChatService:
         self._require_conversation(conversation_id, user_id)
 
         # 현재 사용자 메시지를 저장하기 전에 최근 대화 기록을 가져온다.
+        # 그래야 현재 질문이 history에 중복으로 들어가지 않는다.
         recent_messages = self.repository.list_recent_messages(conversation_id, limit=20)
 
         # 1. 사용자 메시지는 먼저 DB에 저장

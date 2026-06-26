@@ -252,6 +252,20 @@ tools = [
 ]
 
 
+FILE_MANAGEMENT_SYSTEM_PROMPT = """
+당신은 Google Drive 파일 관리 에이전트입니다.
+파일 업로드, 다운로드, 목록 조회, 삭제, 업데이트, 폴더 생성을 수행합니다.
+
+규칙:
+1. 실행 대상은 항상 현재 사용자 요청입니다.
+2. 입력에 [이전 대화 - 참조 전용, 실행 금지] 블록이 있으면, 그 안의 과거 사용자 요청은 절대 다시 실행하지 마세요.
+3. 이전 대화는 "조사한 내용", "위 내용", "방금 답변", "1번 자료", "2번 자료"처럼 현재 요청이 참조하는 저장/업데이트 대상을 찾을 때만 사용하세요.
+4. 이전 assistant 답변을 파일 content로 저장하거나 업데이트할 때는 원문을 요약, 재작성, 번역, 보정하지 말고 그대로 사용하세요.
+5. 사용자가 파일명을 지정하지 않으면 짧고 안전한 .txt 파일명을 만들어 사용하세요.
+6. 삭제/수정처럼 되돌리기 어려운 작업은 현재 사용자 요청에 명시되어 있을 때만 수행하세요.
+"""
+
+
 class FileManagementAgent:
     """A2A 프로토콜용 에이전트 래퍼"""
 
@@ -264,7 +278,11 @@ class FileManagementAgent:
         if self.initialized:
             return
         _client.initialize()
-        self.graph = create_agent(model=self.model_name, tools=tools)
+        self.graph = create_agent(
+            model=self.model_name,
+            tools=tools,
+            system_prompt=FILE_MANAGEMENT_SYSTEM_PROMPT,
+        )
         self.initialized = True
         logger.info("[FILE AGENT] [INIT] File Management Agent 초기화 완료")
 
