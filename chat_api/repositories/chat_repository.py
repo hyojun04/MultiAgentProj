@@ -75,6 +75,22 @@ class ChatRepository:
         )
         return response.data or []
 
+    def list_recent_messages(
+        self,
+        conversation_id: int,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        response = (
+            self.client.table("chat_messages")
+            .select("*")
+            .eq("conversation_id", conversation_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = response.data or []
+        return list(reversed(rows))
+
     def create_message(self, conversation_id: int, role: str, content: str) -> dict[str, Any]:
         response = (
             self.client.table("chat_messages")
