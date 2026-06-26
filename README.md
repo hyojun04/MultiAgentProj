@@ -2,6 +2,7 @@
 
 ## 아키텍처
 <img src="./images/architecture.png" alt="해줘AI 아키텍처" width="900">
+
 ## 환경 설정
 
 ### 1. 패키지 설치
