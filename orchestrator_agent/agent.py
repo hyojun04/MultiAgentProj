@@ -286,13 +286,12 @@ assistant: 이번 주 일정은 다음과 같습니다:
         intent_prompt = self._build_intent_prompt(input_state)
 
         response = await self.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": self.SYSTEM_PROMPT},
                 {"role": "user", "content": intent_prompt},
             ],
             response_format={"type": "json_object"},
-            temperature=0,
         )
 
         return json.loads(response.choices[0].message.content)
