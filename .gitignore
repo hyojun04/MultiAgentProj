@@ -23,6 +23,10 @@ token.json
 file_management_agent/credentials.json
 file_management_agent/token.json
 
+# Google Calendar OAuth
+calendar_agent/token.json
+calendar_agent/credentials.json
+
 # Logs
 *.log
 
