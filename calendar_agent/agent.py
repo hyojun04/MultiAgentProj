@@ -1148,7 +1148,7 @@ class CalendarAgent:
     """
 
     def __init__(self):
-        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        self.llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
         self.calendar_client = GoogleCalendarClient()
 
     def parse_request(self, query: str) -> CalendarRequest:

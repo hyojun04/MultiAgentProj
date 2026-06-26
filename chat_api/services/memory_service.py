@@ -22,7 +22,7 @@ class MemoryService:
         self,
         repository: MemoryRepository | None = None,
         embedding_model: str = "text-embedding-3-small",
-        extract_model: str = "gpt-4o-mini",
+        extract_model: str = "gpt-4.1-mini",
         match_count: int = 5,
     ):
         self.repository = repository or MemoryRepository()

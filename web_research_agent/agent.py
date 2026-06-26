@@ -37,7 +37,7 @@ class WebResearchAgent:
     """
 
     def __init__(self):
-        self.model = ChatOpenAI(model="gpt-4o")
+        self.model = ChatOpenAI(model="gpt-4.1-mini")
         self.mcp_client = None
         self.agent = None
         self.initialized = False

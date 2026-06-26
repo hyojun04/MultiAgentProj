@@ -269,7 +269,7 @@ FILE_MANAGEMENT_SYSTEM_PROMPT = """
 class FileManagementAgent:
     """A2A 프로토콜용 에이전트 래퍼"""
 
-    def __init__(self, model_name: str = "openai:gpt-4o"): # [ 1 ]
+    def __init__(self, model_name: str = "openai:gpt-4.1-mini"): # [ 1 ]
         self.model_name = model_name
         self.graph = None
         self.initialized = False
