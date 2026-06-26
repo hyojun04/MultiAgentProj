@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any, AsyncIterator
 from uuid import uuid4
@@ -50,15 +51,29 @@ class AgentService:
 
         self.agent_client = None
 
-    async def send_message(self, content: str, conversation_id: int) -> str:
+    async def send_message(
+        self,
+        content: str,
+        conversation_id: int,
+        history: list[dict[str, Any]] | None = None,
+        memory_context: str = "",
+    ) -> str:
         """
         기존 비스트리밍 방식.
         기존 /messages API 호환용으로 유지한다.
+        메모리 기능을 위해 content, history, memory_context를 JSON payload로 전달한다.
         """
+
         if not self.agent_client:
             await self.initialize()
 
-        message = self._build_message(content)
+        message = self._build_message(
+            content=content,
+            conversation_id=conversation_id,
+            history=history,
+            memory_context=memory_context,
+        )
+
         request = SendMessageRequest(
             id=uuid4().hex,
             params=MessageSendParams(message=message),
@@ -77,6 +92,8 @@ class AgentService:
         self,
         content: str,
         conversation_id: int,
+        history: list[dict[str, Any]] | None = None,
+        memory_context: str = "",
     ) -> AsyncIterator[dict[str, Any]]:
         """
         Orchestrator Agent의 스트리밍 응답을 받아서
@@ -112,7 +129,12 @@ class AgentService:
                 "[CHAT API] A2A streaming is not available. Falling back to normal send_message."
             )
 
-            assistant_content = await self.send_message(content, conversation_id)
+            assistant_content = await self.send_message(
+                content=content,
+                conversation_id=conversation_id,
+                history=history,
+                memory_context=memory_context,
+            )
 
             yield {
                 "type": "final_delta",
@@ -130,7 +152,12 @@ class AgentService:
 
             return
 
-        message = self._build_message(content)
+        message = self._build_message(
+            content=content,
+            conversation_id=conversation_id,
+            history=history,
+            memory_context=memory_context,
+        )
 
         request = SendStreamingMessageRequest(
             id=uuid4().hex,
@@ -149,7 +176,7 @@ class AgentService:
 
                 if structured_event:
                     event_type = structured_event.get("type", "status")
-                    event_content = structured_event.get("content", "")
+                    event_content = structured_event.get("content", "") or ""
 
                     if event_type == "status":
                         yield {
@@ -170,7 +197,8 @@ class AgentService:
                         }
 
                     elif event_type == "done":
-                        final_content = event_content or "".join(assistant_parts)
+                        # 이미 delta로 받은 내용이 있으면 done content를 다시 delta로 보내지 않는다.
+                        final_content = "".join(assistant_parts) or event_content
 
                     continue
 
@@ -241,11 +269,58 @@ class AgentService:
 
             raise
 
-    def _build_message(self, content: str) -> Message:
+    @staticmethod
+    def _build_message_payload(
+        content: str,
+        conversation_id: int,
+        history: list[dict[str, Any]] | None = None,
+        memory_context: str = "",
+    ) -> dict[str, Any]:
+        conversation_history = []
+
+        for message in history or []:
+            message_content = message.get("content")
+
+            if not message_content:
+                continue
+
+            conversation_history.append(
+                {
+                    "role": str(message.get("role", "")),
+                    "content": str(message_content),
+                }
+            )
+
+        return {
+            "current_query": content,
+            "conversation_id": conversation_id,
+            "conversation_history": conversation_history,
+            "memory_context": memory_context or "",
+        }
+
+    def _build_message(
+        self,
+        content: str,
+        conversation_id: int,
+        history: list[dict[str, Any]] | None = None,
+        memory_context: str = "",
+    ) -> Message:
+        payload = self._build_message_payload(
+            content=content,
+            conversation_id=conversation_id,
+            history=history,
+            memory_context=memory_context,
+        )
+
         return Message(
             kind="message",
             role="user",
-            parts=[TextPart(kind="text", text=content)],
+            parts=[
+                TextPart(
+                    kind="text",
+                    text=json.dumps(payload, ensure_ascii=False),
+                )
+            ],
             message_id=uuid4().hex,
         )
 
@@ -284,6 +359,7 @@ class AgentService:
         # 2. artifact 단일 객체
         if hasattr(result, "artifact") and result.artifact:
             artifact = result.artifact
+
             for part in getattr(artifact, "parts", []) or []:
                 text = cls._extract_text_from_part(part)
                 if text:
@@ -337,6 +413,7 @@ class AgentService:
 
                 if isinstance(data, dict):
                     content = data.get("content")
+
                     if isinstance(content, str):
                         return content
 
@@ -371,7 +448,6 @@ class AgentService:
         if not text:
             return None
 
-        # 혹시 JSON string으로 들어온 경우까지 처리
         text = text.strip()
 
         if not text.startswith("{"):
@@ -393,6 +469,7 @@ class AgentService:
             for artifact in result.artifacts:
                 for part in getattr(artifact, "parts", []) or []:
                     data = cls._extract_data_from_part(part)
+
                     if data is not None:
                         return data
 
@@ -401,6 +478,7 @@ class AgentService:
 
             for part in getattr(artifact, "parts", []) or []:
                 data = cls._extract_data_from_part(part)
+
                 if data is not None:
                     return data
 
@@ -410,18 +488,21 @@ class AgentService:
             if status_message:
                 for part in getattr(status_message, "parts", []) or []:
                     data = cls._extract_data_from_part(part)
+
                     if data is not None:
                         return data
 
         if hasattr(result, "message") and result.message:
             for part in getattr(result.message, "parts", []) or []:
                 data = cls._extract_data_from_part(part)
+
                 if data is not None:
                     return data
 
         if hasattr(result, "parts") and result.parts:
             for part in result.parts:
                 data = cls._extract_data_from_part(part)
+
                 if data is not None:
                     return data
 

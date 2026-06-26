@@ -48,18 +48,26 @@ class ChatService:
     ) -> dict[str, Any]:
         self._require_conversation(conversation_id, user_id)
 
-        user_message = self.repository.create_message(conversation_id, "user", content)
+        # 현재 사용자 메시지를 저장하기 전에 최근 대화 기록을 가져온다.
+        # 그래야 현재 질문이 history에 중복으로 들어가지 않는다.
+        recent_messages = self.repository.list_recent_messages(conversation_id, limit=20)
 
-        # 장기메모리 검색 → 오케스트레이터로 보낼 content에만 컨텍스트 prepend
-        memory_context = self.memory_service.retrieve_context(user_id, content)
-        augmented_content = (
-            f"{memory_context}\n\n{content}" if memory_context else content
+        user_message = self.repository.create_message(
+            conversation_id,
+            "user",
+            content,
         )
+
+        # 장기메모리는 현재 요청과 분리해서 전달한다.
+        # 메모리 내용이 실제 실행 명령으로 섞이지 않게 하기 위함.
+        memory_context = self.memory_service.retrieve_context(user_id, content)
 
         try:
             assistant_content = await self.agent_service.send_message(
-                augmented_content,
+                content,
                 conversation_id,
+                history=recent_messages,
+                memory_context=memory_context,
             )
         except Exception as exc:
             raise api_error(502, "AGENT_CALL_FAILED", str(exc)) from exc
@@ -85,7 +93,6 @@ class ChatService:
             "assistant_message": assistant_message,
         }
 
-    # 스트리밍 답변
     async def send_message_stream(
         self,
         conversation_id: int,
@@ -93,6 +100,9 @@ class ChatService:
         content: str,
     ) -> AsyncIterator[dict[str, Any]]:
         self._require_conversation(conversation_id, user_id)
+
+        # 현재 사용자 메시지를 저장하기 전에 최근 대화 기록을 가져온다.
+        recent_messages = self.repository.list_recent_messages(conversation_id, limit=20)
 
         # 1. 사용자 메시지는 먼저 DB에 저장
         user_message = self.repository.create_message(
@@ -108,11 +118,8 @@ class ChatService:
             },
         }
 
-        # 2. 장기 메모리 컨텍스트 추가
+        # 2. 장기 메모리는 content에 붙이지 않고 별도 필드로 전달
         memory_context = self.memory_service.retrieve_context(user_id, content)
-        augmented_content = (
-            f"{memory_context}\n\n{content}" if memory_context else content
-        )
 
         assistant_parts: list[str] = []
         final_content = ""
@@ -120,8 +127,10 @@ class ChatService:
         try:
             # 3. AgentService에서 Orchestrator 스트림 이벤트 받기
             async for event in self.agent_service.stream_message(
-                augmented_content,
+                content,
                 conversation_id,
+                history=recent_messages,
+                memory_context=memory_context,
             ):
                 event_type = event.get("type", "status")
                 event_content = event.get("content", "") or ""

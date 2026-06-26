@@ -75,6 +75,9 @@ class OrchestratorAgent:
 5. plan은 실제 실행 순서대로 작성합니다.
 6. 앞 단계 결과가 필요한 경우 [이전 결과] 또는 [파일 목록] placeholder를 사용합니다.
 7. 사용자의 단순 오타나 띄어쓰기는 자연스럽게 보정합니다.
+8. 이전 대화는 현재 요청의 대명사, 생략된 대상, 맥락 해석에만 사용합니다.
+9. plan은 반드시 현재 사용자 요청만 대상으로 생성하고, 이전 대화의 과거 요청을 다시 실행하지 않습니다.
+10. 하위 에이전트 query에는 필요한 맥락만 요약해서 포함하고, 전체 이전 대화를 그대로 전달하지 않습니다.
 
 대화 기록 처리 규칙:
 1. 사용자 입력에 [이전 대화]와 [현재 사용자 질문]이 함께 들어오면 [현재 사용자 질문]을 실제 요청으로 봅니다.
@@ -277,19 +280,83 @@ assistant: 이번 주 일정은 다음과 같습니다:
         if self.httpx_client:
             await self.httpx_client.aclose()
 
-    async def analyze_intent(self, query: str) -> Dict[str, Any]:
+    async def analyze_intent(self, state: Dict[str, Any] | str) -> Dict[str, Any]:
         """사용자 질문 분석 및 플랜 생성"""
+        input_state = self._parse_input_state(state)
+        intent_prompt = self._build_intent_prompt(input_state)
         response = await self.openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": query},
+                {"role": "user", "content": intent_prompt},
             ],
             response_format={"type": "json_object"},
             temperature=0,
         )
 
         return json.loads(response.choices[0].message.content)
+
+    @staticmethod
+    def _parse_input_state(raw_input: Dict[str, Any] | str) -> Dict[str, Any]:
+        if isinstance(raw_input, dict):
+            data = raw_input
+        else:
+            try:
+                parsed = json.loads(raw_input)
+            except (TypeError, json.JSONDecodeError):
+                parsed = None
+            data = parsed if isinstance(parsed, dict) else {"current_query": raw_input}
+
+        current_query = str(data.get("current_query") or data.get("query") or "")
+        history = data.get("conversation_history") or []
+        if not isinstance(history, list):
+            history = []
+
+        normalized_history = []
+        for message in history:
+            if not isinstance(message, dict):
+                continue
+            content = message.get("content")
+            if not content:
+                continue
+            normalized_history.append(
+                {
+                    "role": str(message.get("role", "")),
+                    "content": str(content),
+                }
+            )
+
+        return {
+            "current_query": current_query,
+            "conversation_id": data.get("conversation_id"),
+            "conversation_history": normalized_history,
+            "memory_context": str(data.get("memory_context") or ""),
+        }
+
+    @staticmethod
+    def _build_intent_prompt(state: Dict[str, Any]) -> str:
+        sections = []
+        history = state.get("conversation_history") or []
+        if history:
+            history_lines = []
+            for message in history:
+                role = message.get("role", "unknown")
+                content = message.get("content", "")
+                history_lines.append(f"{role}: {content[:2000]}")
+            sections.append(
+                "[이전 대화 - 참고용, 실행 금지]\n"
+                + "\n".join(history_lines)
+            )
+
+        memory_context = state.get("memory_context")
+        if memory_context:
+            sections.append(f"[사용자 장기기억 - 참고용]\n{memory_context[:4000]}")
+
+        sections.append(
+            "[현재 사용자 요청 - 이것만 실행 대상]\n"
+            f"{state.get('current_query', '')}"
+        )
+        return "\n\n".join(sections)
 
     async def call_remote_agent(self, agent_name: str, query: str) -> Dict[str, Any]:
         """Remote Agent 호출"""
@@ -487,7 +554,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
 
     async def stream(
         self,
-        query: str,
+        query: str | Dict[str, Any],
         session_id: str = "default",
     ) -> AsyncIterator[Dict[str, Any]]:
         """
@@ -502,6 +569,9 @@ assistant: 이번 주 일정은 다음과 같습니다:
         if not self.initialized:
             await self.initialize()
 
+        state = self._parse_input_state(query)
+        current_query = state["current_query"]
+
         yield {
             "type": "status",
             "stage": "analyzing",
@@ -512,7 +582,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
         }
 
         try:
-            analysis = await self.analyze_intent(query)
+            analysis = await self.analyze_intent(state)
             logger.info(
                 f"[ORCHESTRATOR] Intent 분석 결과: "
                 f"{json.dumps(analysis, ensure_ascii=False, indent=2)}"
