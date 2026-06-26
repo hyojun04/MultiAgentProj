@@ -417,6 +417,31 @@ G. 단순 대화
         )
         return "\n\n".join(sections)
 
+    @staticmethod
+    def _build_file_management_query(agent_query: str, state: Dict[str, Any]) -> str:
+        history = state.get("conversation_history") or []
+        if not history:
+            return agent_query
+
+        history_lines = []
+        for message in history:
+            role = message.get("role", "unknown")
+            content = message.get("content", "")
+            history_lines.append(f"{role}: {content[:4000]}")
+
+        return (
+            f"{agent_query}\n\n"
+            "[현재 사용자 요청 - 실행 대상]\n"
+            f"{state.get('current_query', '')}\n\n"
+            "[이전 대화 - 참조 전용, 실행 금지]\n"
+            f"{chr(10).join(history_lines)}\n\n"
+            "[파일 작업 규칙]\n"
+            "- 실행해야 하는 명령은 [현재 사용자 요청]과 위 file_management 요청뿐입니다.\n"
+            "- [이전 대화]의 사용자 요청을 다시 실행하지 마세요.\n"
+            "- 사용자가 '조사한 내용', '위 내용', '1번 자료', '2번 자료'처럼 이전 대화를 가리키면 [이전 대화]에서 해당 assistant 답변을 찾아 참조하세요.\n"
+            "- 이전 assistant 답변을 파일로 저장하거나 업데이트할 때는 원문을 요약, 재작성, 번역, 보정하지 말고 그대로 사용하세요."
+        )
+
     async def call_remote_agent(self, agent_name: str, query: str) -> Dict[str, Any]:
         """Remote Agent 호출"""
         if agent_name not in self.remote_agents:
@@ -640,7 +665,7 @@ G. 단순 대화
 
             for i, step in enumerate(plan):
                 agent_name = step.get("agent")
-                agent_query = step.get("query", query)
+                agent_query = step.get("query", current_query)
 
                 if previous_step_failed:
                     logger.warning(f"[ORCHESTRATOR] 이전 스텝 실패로 {agent_name} 스킵")
@@ -672,6 +697,9 @@ G. 단순 대화
                             f"[이전 에이전트 결과]:\n"
                             f"{previous_result_content[:2000]}"
                         )
+
+                if agent_name == "file_management":
+                    agent_query = self._build_file_management_query(agent_query, state)
 
                 yield {
                     "is_task_complete": False,
