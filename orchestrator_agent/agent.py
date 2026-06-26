@@ -292,6 +292,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
                 {"role": "user", "content": intent_prompt},
             ],
             response_format={"type": "json_object"},
+
         )
 
         return json.loads(response.choices[0].message.content)
@@ -517,7 +518,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
         results_text = json.dumps(results, ensure_ascii=False, indent=2)
 
         response = await self.openai_client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1",
             messages=[
                 {
                     "role": "system",
@@ -549,7 +550,7 @@ assistant: 이번 주 일정은 다음과 같습니다:
         results_text = json.dumps(results, ensure_ascii=False, indent=2)
 
         stream = await self.openai_client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1",
             messages=[
                 {
                     "role": "system",
