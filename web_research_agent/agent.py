@@ -172,7 +172,7 @@ class WebResearchAgent:
     """
 
     def __init__(self):
-        self.model = ChatOpenAI(model="gpt-4o")
+        self.model = ChatOpenAI(model="gpt-4.1")
         self.initialized = False
 
     async def initialize(self) -> None:
